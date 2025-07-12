@@ -724,7 +724,6 @@ def get_active_buddy(userid):
         for row in records:
             if ((str(row.get('RequesterID', '')) == str(userid) or str(row.get('TargetID', '')) == str(userid)) 
                 and str(row.get('Status', '')) == 'Active'):
-
                 if str(row.get('RequesterID', '')) == str(userid):
                     return {
                         'buddy_id': str(row.get('TargetID', '')),
@@ -895,7 +894,7 @@ def handle_buddy_remove(username, userid):
         records = buddy_sheet.get_all_records()
         for i, row in enumerate(records):
             if ((str(row.get('RequesterID', '')) == str(userid) or str(row.get('TargetID', '')) == str(userid)) 
-                and str(row.get('Status', '')) == 'Active':
+                and str(row.get('Status', '')) == 'Active'):
                 buddy_sheet.update_cell(i + 2, 5, "Removed")  # Status column
                 break
         
