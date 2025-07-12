@@ -723,7 +723,8 @@ def get_active_buddy(userid):
         records = buddy_sheet.get_all_records()
         for row in records:
             if ((str(row.get('RequesterID', '')) == str(userid) or str(row.get('TargetID', '')) == str(userid)) 
-                and str(row.get('Status', '')) == 'Active':
+                and str(row.get('Status', '')) == 'Active'):
+
                 if str(row.get('RequesterID', '')) == str(userid):
                     return {
                         'buddy_id': str(row.get('TargetID', '')),
