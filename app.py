@@ -213,26 +213,50 @@ def refresh_access_token_auto():
         if response.status_code == 200:
             ACCESS_TOKEN = response.json()["access_token"]
             print(f"✅ Access token refreshed from: {cred['name']}")
-            return
+            return True
         else:
             print(f"❌ Failed to refresh from {cred['name']}, trying next...")
             current_index = (current_index + 1) % len(credentials)
 
     print("❌ All tokens failed.")
     ACCESS_TOKEN = None
+    return False
 
 def send_message(video_id, message_text, access_token):
+    global ACCESS_TOKEN
+    
+    # If access token is None, try to refresh first
+    if not access_token:
+        print("⚠️ Access token is None. Refreshing...")
+        if not refresh_access_token_auto():
+            print("❌ Failed to refresh access token. Cannot send message.")
+            return False
+        access_token = ACCESS_TOKEN
+    
     url = "https://youtube.googleapis.com/youtube/v3/liveChat/messages?part=snippet"
-
+    
+    # Get live chat ID
     video_info = requests.get(
         f"https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id={video_id}",
         headers={"Authorization": f"Bearer {access_token}"}
     )
-
-    if video_info.status_code != 200:
-        print("❌ Failed to get video info. Trying token refresh.")
-        refresh_access_token_auto()
-        return
+    
+    # Handle token expiration for video info request
+    if video_info.status_code == 401:
+        print("🔁 Token expired (video_info). Refreshing...")
+        if refresh_access_token_auto():
+            access_token = ACCESS_TOKEN
+            # Retry with new token
+            video_info = requests.get(
+                f"https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id={video_id}",
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+        else:
+            print("❌ Failed to refresh token for video info.")
+            return False
+    elif video_info.status_code != 200:
+        print(f"❌ Failed to get video info: {video_info.status_code} {video_info.text}")
+        return False
 
     try:
         live_details = video_info.json()["items"][0].get("liveStreamingDetails", {})
@@ -240,10 +264,10 @@ def send_message(video_id, message_text, access_token):
 
         if not live_chat_id:
             print("❌ No active live chat found. Is the stream live and is chat enabled?")
-            return
+            return False
     except (IndexError, KeyError) as e:
         print(f"❌ Error extracting live chat ID: {e}")
-        return
+        return False
 
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -262,13 +286,21 @@ def send_message(video_id, message_text, access_token):
     response = requests.post(url, headers=headers, json=payload)
 
     if response.status_code == 401:
-        print("🔁 Token expired. Refreshing...")
-        refresh_access_token_auto()
-        send_message(video_id, message_text, ACCESS_TOKEN)
-    elif response.status_code == 200:
+        print("🔁 Token expired when sending message. Refreshing and retrying...")
+        if refresh_access_token_auto():
+            access_token = ACCESS_TOKEN
+            headers["Authorization"] = f"Bearer {access_token}"
+            response = requests.post(url, headers=headers, json=payload)
+        else:
+            print("❌ Failed to refresh token for message send.")
+            return False
+    
+    if response.status_code == 200:
         print(f"✅ Replied: {message_text}")
+        return True
     else:
-        print("❌ Failed to send message:", response.text)
+        print(f"❌ Failed to send message: {response.status_code} {response.text}")
+        return False
 
 # === Helper Functions ===
 
@@ -691,7 +723,7 @@ def get_active_buddy(userid):
         records = buddy_sheet.get_all_records()
         for row in records:
             if ((str(row.get('RequesterID', '')) == str(userid) or str(row.get('TargetID', '')) == str(userid)) 
-                and str(row.get('Status', '')) == 'Active'):
+                and str(row.get('Status', '')) == 'Active':
                 if str(row.get('RequesterID', '')) == str(userid):
                     return {
                         'buddy_id': str(row.get('TargetID', '')),
@@ -862,7 +894,7 @@ def handle_buddy_remove(username, userid):
         records = buddy_sheet.get_all_records()
         for i, row in enumerate(records):
             if ((str(row.get('RequesterID', '')) == str(userid) or str(row.get('TargetID', '')) == str(userid)) 
-                and str(row.get('Status', '')) == 'Active'):
+                and str(row.get('Status', '')) == 'Active':
                 buddy_sheet.update_cell(i + 2, 5, "Removed")  # Status column
                 break
         
